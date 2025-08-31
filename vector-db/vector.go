@@ -13,7 +13,7 @@ type Embedding struct {
 
 // VectorDB defines the interface for a vector database.
 type VectorDB interface {
-	// Returns the type of vector DB ( inmem or online defined in directories)
+	// Returns the type of vector DB ( inmem or pg_sql)
 	Type(ctx context.Context) string
 
 	// Add stores an embedding in the database.
@@ -43,13 +43,14 @@ type Config struct {
 	Type string
 	// In-memory: no extra fields
 	// PGSQL:
-	Host     string
-	Port     int
-	User     string
-	Password string
-	Database string
-	Table    string
-	Col      string
+	Host      string
+	Port      int
+	User      string
+	Password  string
+	Database  string
+	Table     string
+	Col       string
+	IdColName interface{}
 }
 
 // Useful vector math helpers

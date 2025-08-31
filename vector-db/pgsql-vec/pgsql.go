@@ -10,9 +10,10 @@ import (
 )
 
 type Entity struct {
-	db    *pgxpool.Pool
-	table string
-	col   string
+	db        *pgxpool.Pool
+	table     string
+	col       string
+	idColname interface{}
 }
 
 func NewEntity(cfg vector.Config) (*Entity, error) {
@@ -20,7 +21,7 @@ func NewEntity(cfg vector.Config) (*Entity, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Entity{db: pool, table: cfg.Table, col: cfg.Col}, nil
+	return &Entity{db: pool, table: cfg.Table, col: cfg.Col, idColname: cfg.IdColName}, nil
 }
 
 func (e *Entity) Type(ctx context.Context) string {
@@ -30,7 +31,8 @@ func (e *Entity) Type(ctx context.Context) string {
 func (e *Entity) Add(ctx context.Context, emb vector.Embedding) error {
 	metaJson, _ := json.Marshal(emb.Meta)
 	_, err := e.db.Exec(ctx,
-		fmt.Sprintf("INSERT INTO %s (id, %s, meta) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET %s = $2, meta = $3", e.table, e.col, e.col),
+		fmt.Sprintf("INSERT INTO %s (%s, %s, meta) VALUES ($1, $2, $3) ON CONFLICT (%s) DO UPDATE SET %s = $2, meta = $3",
+			e.table, e.idColname, e.col, e.idColname, e.col),
 		emb.ID, emb.Vec, metaJson)
 	return err
 }
@@ -45,7 +47,7 @@ func (e *Entity) AddN(ctx context.Context, embs []vector.Embedding) error {
 }
 
 func (e *Entity) Search(ctx context.Context, query []float64, topK int) ([]vector.Embedding, error) {
-	q := fmt.Sprintf(`SELECT id, %s, meta FROM %s ORDER BY (%s <#> $1::vector) ASC LIMIT $2`, e.col, e.table, e.col)
+	q := fmt.Sprintf(`SELECT %s, %s, meta FROM %s ORDER BY (%s <#> $1::vector) ASC LIMIT $2`, e.idColname, e.col, e.table, e.col)
 	rows, err := e.db.Query(ctx, q, query, topK)
 	if err != nil {
 		return nil, err
@@ -74,7 +76,7 @@ func (e *Entity) Count(ctx context.Context) (int, error) {
 }
 
 func (e *Entity) Delete(ctx context.Context, id string) error {
-	q := fmt.Sprintf("DELETE FROM %s WHERE id = $1", e.table)
+	q := fmt.Sprintf("DELETE FROM %s WHERE %s = $1", e.table, e.idColname)
 	_, err := e.db.Exec(ctx, q, id)
 	return err
 }
@@ -84,3 +86,5 @@ func (e *Entity) Clear(ctx context.Context) error {
 	_, err := e.db.Exec(ctx, q)
 	return err
 }
+
+var _ vector.VectorDB = &Entity{}
