@@ -229,7 +229,7 @@ func (c *Client) PromptWithContext(ctx context.Context, prompt string, contextIt
 		threadID := thread.ID
 		// Add all context messages to the thread
 		for _, ctxItem := range contextItems {
-			msg := MessageRequest{Role: "system", Content: ctxItem}
+			msg := MessageRequest{Role: "user", Content: ctxItem}
 			if err := c.AddMessage(ctx, threadID, msg); err != nil {
 				return "", fmt.Errorf("failed to add context message: %w", err)
 			}

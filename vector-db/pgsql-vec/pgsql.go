@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/shreetheja/ai-contextual-prompter/vector-db"
@@ -30,10 +32,11 @@ func (e *Entity) Type(ctx context.Context) string {
 
 func (e *Entity) Add(ctx context.Context, emb vector.Embedding) error {
 	metaJson, _ := json.Marshal(emb.Meta)
+	vecStr := floatSliceToPgvector(emb.Vec)
 	_, err := e.db.Exec(ctx,
 		fmt.Sprintf("INSERT INTO %s (%s, %s, meta) VALUES ($1, $2, $3) ON CONFLICT (%s) DO UPDATE SET %s = $2, meta = $3",
 			e.table, e.idColname, e.col, e.idColname, e.col),
-		emb.ID, emb.Vec, metaJson)
+		emb.ID, vecStr, metaJson)
 	return err
 }
 
@@ -47,8 +50,9 @@ func (e *Entity) AddN(ctx context.Context, embs []vector.Embedding) error {
 }
 
 func (e *Entity) Search(ctx context.Context, query []float64, topK int) ([]vector.Embedding, error) {
+	vecStr := floatSliceToPgvector(query)
 	q := fmt.Sprintf(`SELECT %s, %s, meta FROM %s ORDER BY (%s <#> $1::vector) ASC LIMIT $2`, e.idColname, e.col, e.table, e.col)
-	rows, err := e.db.Query(ctx, q, query, topK)
+	rows, err := e.db.Query(ctx, q, vecStr, topK)
 	if err != nil {
 		return nil, err
 	}
@@ -56,9 +60,13 @@ func (e *Entity) Search(ctx context.Context, query []float64, topK int) ([]vecto
 	var out []vector.Embedding
 	for rows.Next() {
 		var id string
-		var vec []float64
+		var vecStr string
 		var metaJson []byte
-		if err := rows.Scan(&id, &vec, &metaJson); err != nil {
+		if err := rows.Scan(&id, &vecStr, &metaJson); err != nil {
+			return nil, err
+		}
+		vec, err := parsePgvectorString(vecStr)
+		if err != nil {
 			return nil, err
 		}
 		var meta map[string]interface{}
@@ -85,6 +93,35 @@ func (e *Entity) Clear(ctx context.Context) error {
 	q := fmt.Sprintf("DELETE FROM %s", e.table)
 	_, err := e.db.Exec(ctx, q)
 	return err
+}
+
+// floatSliceToPgvector converts a []float64 to a pgvector string literal: [0.1, 0.2, 0.3]
+func floatSliceToPgvector(vec []float64) string {
+	s := make([]string, len(vec))
+	for i, v := range vec {
+		s[i] = fmt.Sprintf("%g", v)
+	}
+	return fmt.Sprintf("[%s]", strings.Join(s, ", "))
+}
+
+// parsePgvectorString parses a pgvector string literal like "[0.1, 0.2, 0.3]" to []float64
+func parsePgvectorString(s string) ([]float64, error) {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "[")
+	s = strings.TrimSuffix(s, "]")
+	if s == "" {
+		return nil, nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]float64, len(parts))
+	for i, p := range parts {
+		f, err := strconv.ParseFloat(strings.TrimSpace(p), 64)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = f
+	}
+	return out, nil
 }
 
 var _ vector.VectorDB = &Entity{}

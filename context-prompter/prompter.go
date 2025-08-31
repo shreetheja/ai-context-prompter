@@ -3,6 +3,7 @@ package context_prompter
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	llmproviders "github.com/shreetheja/ai-contextual-prompter/llm-providers"
 	"github.com/shreetheja/ai-contextual-prompter/vector-db"
@@ -75,6 +76,7 @@ func (p *Prompter) Query(ctx context.Context, prompt string, topK int, opts ...l
 	if err != nil {
 		return "", err
 	}
+	fmt.Printf("len(contexts): %v\n", len(contexts))
 	var contextItems []string
 	for _, emb := range contexts {
 		if metaText, ok := emb.Meta["text"].(string); ok {
